@@ -1514,7 +1514,924 @@ function DashboardPage.Build(page, context)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 7. PUBLIC API — the Losarinz namespace
+-- 6b. COMPONENTS — toggle / slider / dropdown / input / button / section /
+--     paragraph. Not part of the original Phase 1 release; added so existing
+--     Rayfield-style scripts can be adapted onto Losarinz (see section 8).
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local Components = {}
+
+local function newContainer(parent, order)
+	local container = Theme.instance("Frame", {
+		Name = "Control",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		LayoutOrder = order,
+	}, { Theme.list(Enum.FillDirection.Vertical, 6) })
+	container.Parent = parent
+	return container
+end
+
+local function newRow(container, height)
+	local r = Theme.instance("Frame", {
+		Name = "Row",
+		Size = UDim2.new(1, 0, 0, height or 44),
+		BackgroundColor3 = Theme.Colors.Card,
+		BackgroundTransparency = 0.1,
+		BorderSizePixel = 0,
+	}, { Theme.corner(Theme.Radius.Card), Theme.stroke(Theme.Colors.Outline, 1, 0.5), Theme.padding(14, 0, 14, 0) })
+	r.Parent = container
+	return r
+end
+
+function Components.Section(_parent, _order, proxy)
+	local container = newContainer(_parent, _order)
+	container.AutomaticSize = Enum.AutomaticSize.None
+	container.Size = UDim2.new(1, 0, 0, 26)
+	local label = Theme.text(string.upper(tostring(proxy.Name or "")), 11, {
+		Font = Theme.Fonts.Bold,
+		Color = Theme.Colors.Secondary,
+	})
+	label.Position = UDim2.new(0, 0, 1, -14)
+	label.Size = UDim2.new(1, 0, 0, 14)
+	label.Parent = container
+	return container, nil
+end
+
+function Components.Toggle(parent, order, proxy)
+	local container = newContainer(parent, order)
+	local r = newRow(container, 44)
+
+	Theme.text(proxy.Name, 13, { Size = UDim2.new(1, -60, 1, 0) }).Parent = r
+
+	local track = Theme.instance("TextButton", {
+		Name = "Switch",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.fromOffset(40, 22),
+		Text = "",
+		AutoButtonColor = false,
+		BackgroundColor3 = if proxy.CurrentValue then Theme.Colors.Primary else Theme.Colors.Outline,
+		BorderSizePixel = 0,
+	}, { Theme.corner(Theme.Radius.Pill) })
+	track.Parent = r
+
+	local knob = Theme.instance("Frame", {
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, if proxy.CurrentValue then 20 else 2, 0.5, 0),
+		Size = UDim2.fromOffset(18, 18),
+		BackgroundColor3 = Theme.Colors.TextPrimary,
+		BorderSizePixel = 0,
+	}, { Theme.corner(Theme.Radius.Pill) })
+	knob.Parent = track
+
+	local function paint(value)
+		Theme.play(track, Config.Animation.Hover, { BackgroundColor3 = if value then Theme.Colors.Primary else Theme.Colors.Outline })
+		Theme.play(knob, Config.Animation.Hover, { Position = UDim2.new(0, if value then 20 else 2, 0.5, 0) })
+	end
+
+	track.Activated:Connect(function()
+		proxy:_fire(not proxy.CurrentValue)
+	end)
+
+	proxy._visual = paint
+	return container, nil
+end
+
+function Components.Slider(parent, order, proxy)
+	local container = newContainer(parent, order)
+	local r = newRow(container, 54)
+
+	local min, max = proxy.Range[1], proxy.Range[2]
+	local increment = proxy.Increment or 1
+
+	local label = Theme.text(proxy.Name, 13, { Size = UDim2.new(1, -70, 0, 20) })
+	label.Position = UDim2.new(0, 0, 0, 2)
+	label.Parent = r
+
+	local valueLabel = Theme.text("", 12, {
+		Color = Theme.Colors.Secondary,
+		Font = Theme.Fonts.Bold,
+		Align = Enum.TextXAlignment.Right,
+		Size = UDim2.fromOffset(60, 20),
+	})
+	valueLabel.AnchorPoint = Vector2.new(1, 0)
+	valueLabel.Position = UDim2.new(1, 0, 0, 2)
+	valueLabel.Parent = r
+
+	local track = Theme.instance("Frame", {
+		Name = "Track",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 0, 1, -8),
+		Size = UDim2.new(1, 0, 0, 6),
+		BackgroundColor3 = Theme.Colors.Outline,
+		BackgroundTransparency = 0.2,
+		BorderSizePixel = 0,
+	}, { Theme.corner(Theme.Radius.Pill) })
+	track.Parent = r
+
+	local fill = Theme.instance("Frame", {
+		Name = "Fill",
+		Size = UDim2.new(0, 0, 1, 0),
+		BackgroundColor3 = Theme.Colors.Primary,
+		BorderSizePixel = 0,
+	}, { Theme.corner(Theme.Radius.Pill) })
+	fill.Parent = track
+
+	local knob = Theme.instance("Frame", {
+		Name = "Knob",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0, 0, 0.5, 0),
+		Size = UDim2.fromOffset(14, 14),
+		BackgroundColor3 = Theme.Colors.TextPrimary,
+		BorderSizePixel = 0,
+		ZIndex = 2,
+	}, { Theme.corner(Theme.Radius.Pill), Theme.stroke(Theme.Colors.Primary, 2) })
+	knob.Parent = track
+
+	local function alphaFor(value)
+		if max <= min then
+			return 0
+		end
+		return math.clamp((value - min) / (max - min), 0, 1)
+	end
+
+	local function paint(value)
+		local alpha = alphaFor(value)
+		fill.Size = UDim2.new(alpha, 0, 1, 0)
+		knob.Position = UDim2.new(alpha, 0, 0.5, 0)
+		local decimals = if increment % 1 == 0 then 0 else 2
+		valueLabel.Text = ("%." .. decimals .. "f%s"):format(value, proxy.Suffix or "")
+	end
+
+	local dragging = false
+	local function setFromX(x)
+		local absPos = track.AbsolutePosition.X
+		local absSize = math.max(track.AbsoluteSize.X, 1)
+		local alpha = math.clamp((x - absPos) / absSize, 0, 1)
+		local raw = min + (max - min) * alpha
+		local stepped = math.floor((raw - min) / increment + 0.5) * increment + min
+		stepped = math.clamp(stepped, min, max)
+		paint(stepped)
+		proxy:_fire(stepped)
+	end
+
+	local connections = {}
+	table.insert(connections, track.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			setFromX(input.Position.X)
+		end
+	end))
+	table.insert(connections, track.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end))
+	table.insert(connections, UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			setFromX(input.Position.X)
+		end
+	end))
+	table.insert(connections, UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end))
+
+	proxy._visual = paint
+	paint(proxy.CurrentValue or min)
+
+	return container, function()
+		for _, c in connections do
+			c:Disconnect()
+		end
+	end
+end
+
+function Components.Dropdown(parent, order, proxy)
+	local container = newContainer(parent, order)
+	local r = newRow(container, 44)
+
+	Theme.text(proxy.Name, 13, { Size = UDim2.new(1, -90, 1, 0) }).Parent = r
+
+	local summary = Theme.text("", 12, {
+		Color = Theme.Colors.Secondary,
+		Align = Enum.TextXAlignment.Right,
+		Size = UDim2.new(0, 110, 1, 0),
+	})
+	summary.AnchorPoint = Vector2.new(1, 0)
+	summary.Position = UDim2.new(1, -26, 0, 0)
+	summary.Parent = r
+
+	local caret = Theme.text("v", 12, {
+		Color = Theme.Colors.TextSecondary,
+		Align = Enum.TextXAlignment.Right,
+		Size = UDim2.fromOffset(16, 44),
+	})
+	caret.AnchorPoint = Vector2.new(1, 0)
+	caret.Position = UDim2.new(1, 0, 0, 0)
+	caret.Parent = r
+
+	local hitButton = Theme.instance("TextButton", {
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundTransparency = 1,
+		Text = "",
+		AutoButtonColor = false,
+		ZIndex = 2,
+	})
+	hitButton.Parent = r
+
+	local list = Theme.instance("Frame", {
+		Name = "Options",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = Theme.Colors.MainPanel,
+		BackgroundTransparency = 0.1,
+		BorderSizePixel = 0,
+		Visible = false,
+		ClipsDescendants = true,
+	}, {
+		Theme.corner(Theme.Radius.Card),
+		Theme.stroke(Theme.Colors.Outline, 1, 0.5),
+		Theme.padding(8, 8, 8, 8),
+		Theme.list(Enum.FillDirection.Vertical, 4),
+	})
+	list.Parent = container
+
+	local optionEntries = {}
+	local open = false
+
+	local function isSelected(name)
+		for _, v in proxy.CurrentOption do
+			if v == name then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function summarize()
+		local sel = proxy.CurrentOption
+		if #sel == 0 then
+			summary.Text = "None"
+		elseif #sel == 1 then
+			summary.Text = tostring(sel[1])
+		else
+			summary.Text = ("%d selected"):format(#sel)
+		end
+	end
+
+	local function paintOption(entry)
+		local sel = isSelected(entry.Name)
+		entry.Button.BackgroundColor3 = if sel then Theme.Colors.Primary else Theme.Colors.Card
+		entry.Button.BackgroundTransparency = if sel then 0.1 else 0.3
+		entry.Button.TextColor3 = if sel then Theme.Colors.TextPrimary else Theme.Colors.TextSecondary
+	end
+
+	local function refreshVisual()
+		summarize()
+		for _, entry in optionEntries do
+			paintOption(entry)
+		end
+	end
+
+	local function selectOption(name)
+		local current = proxy.CurrentOption
+		if proxy.MultipleOptions then
+			local idx
+			for i, v in current do
+				if v == name then
+					idx = i
+					break
+				end
+			end
+			if idx then
+				table.remove(current, idx)
+			else
+				table.insert(current, name)
+			end
+		else
+			current = { name }
+			open = false
+			list.Visible = false
+			caret.Text = "v"
+		end
+		proxy:_fire(current)
+		refreshVisual()
+	end
+
+	local function rebuildOptions(options)
+		for _, entry in optionEntries do
+			entry.Button:Destroy()
+		end
+		table.clear(optionEntries)
+		for i, name in options do
+			local btn = Theme.instance("TextButton", {
+				Name = "Option",
+				Size = UDim2.new(1, 0, 0, 28),
+				AutoButtonColor = false,
+				Text = "  " .. tostring(name),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextSize = 12,
+				Font = Theme.Fonts.Medium,
+				BorderSizePixel = 0,
+				LayoutOrder = i,
+			}, { Theme.corner(Theme.Radius.Control) })
+			btn.Parent = list
+			local entry = { Button = btn, Name = name }
+			btn.Activated:Connect(function()
+				selectOption(name)
+			end)
+			table.insert(optionEntries, entry)
+		end
+	end
+
+	hitButton.Activated:Connect(function()
+		open = not open
+		list.Visible = open
+		caret.Text = if open then "^" else "v"
+	end)
+
+	rebuildOptions(proxy.Options)
+	refreshVisual()
+
+	proxy._visual = function(_value)
+		refreshVisual()
+	end
+	proxy._refresh = function(options)
+		rebuildOptions(options)
+		refreshVisual()
+	end
+
+	return container, nil
+end
+
+function Components.Input(parent, order, proxy)
+	local container = newContainer(parent, order)
+	local r = newRow(container, 44)
+
+	Theme.text(proxy.Name, 13, { Size = UDim2.new(0.42, -8, 1, 0) }).Parent = r
+
+	local box = Theme.instance("TextBox", {
+		Name = "Input",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.new(0.55, 0, 0, 30),
+		BackgroundColor3 = Theme.Colors.MainPanel,
+		BorderSizePixel = 0,
+		Text = tostring(proxy.CurrentValue or ""),
+		PlaceholderText = proxy.PlaceholderText or "",
+		PlaceholderColor3 = Theme.Colors.TextSecondary,
+		TextColor3 = Theme.Colors.TextPrimary,
+		TextSize = 13,
+		Font = Theme.Fonts.Regular,
+		ClearTextOnFocus = false,
+	}, { Theme.corner(Theme.Radius.Control), Theme.stroke(Theme.Colors.Outline, 1, 0.4), Theme.padding(10, 0, 10, 0) })
+	box.Parent = r
+
+	box.FocusLost:Connect(function()
+		proxy:_fire(box.Text)
+		if proxy.RemoveTextAfterFocusLost then
+			box.Text = ""
+		end
+	end)
+
+	proxy._visual = function(value)
+		box.Text = tostring(value or "")
+	end
+
+	return container, nil
+end
+
+function Components.Button(parent, order, proxy)
+	local container = newContainer(parent, order)
+	container.AutomaticSize = Enum.AutomaticSize.None
+	container.Size = UDim2.new(1, 0, 0, 40)
+
+	local btn = Theme.instance("TextButton", {
+		Name = "Button",
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundColor3 = Theme.Colors.Primary,
+		BackgroundTransparency = 0.12,
+		AutoButtonColor = false,
+		Text = proxy.Name,
+		TextColor3 = Theme.Colors.TextPrimary,
+		TextSize = 13,
+		Font = Theme.Fonts.Bold,
+		BorderSizePixel = 0,
+	}, { Theme.corner(Theme.Radius.Card), Theme.stroke(Theme.Colors.Primary, 1, 0.3) })
+	btn.Parent = container
+
+	btn.MouseEnter:Connect(function()
+		Theme.play(btn, Config.Animation.Hover, { BackgroundTransparency = 0 })
+	end)
+	btn.MouseLeave:Connect(function()
+		Theme.play(btn, Config.Animation.Hover, { BackgroundTransparency = 0.12 })
+	end)
+	btn.Activated:Connect(function()
+		local ok, err = pcall(proxy.Callback)
+		if not ok then
+			warn(("[Losarinz] Button '%s' callback error: %s"):format(tostring(proxy.Name), tostring(err)))
+		end
+	end)
+
+	proxy._visual = function(text)
+		if typeof(text) == "string" then
+			btn.Text = text
+		end
+	end
+
+	return container, nil
+end
+
+function Components.Paragraph(parent, order, proxy)
+	local container = newContainer(parent, order)
+
+	local box = Theme.instance("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = Theme.Colors.Card,
+		BackgroundTransparency = 0.15,
+		BorderSizePixel = 0,
+	}, {
+		Theme.corner(Theme.Radius.Card),
+		Theme.stroke(Theme.Colors.Outline, 1, 0.5),
+		Theme.padding(14, 10, 14, 10),
+		Theme.list(Enum.FillDirection.Vertical, 4),
+	})
+	box.Parent = container
+
+	local title = Theme.instance("TextLabel", {
+		Text = tostring(proxy.Title or ""),
+		TextSize = 14,
+		Font = Theme.Fonts.Bold,
+		TextColor3 = Theme.Colors.TextPrimary,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextWrapped = true,
+		Size = UDim2.new(1, 0, 0, 18),
+		BackgroundTransparency = 1,
+	})
+	title.Parent = box
+
+	local content = Theme.instance("TextLabel", {
+		Text = tostring(proxy.Content or ""),
+		TextSize = 12,
+		Font = Theme.Fonts.Regular,
+		TextColor3 = Theme.Colors.TextSecondary,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextWrapped = true,
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.new(1, 0, 0, 0),
+		BackgroundTransparency = 1,
+	})
+	content.Parent = box
+
+	proxy._visual = function(value)
+		if typeof(value) == "table" then
+			if value.Title ~= nil then
+				title.Text = tostring(value.Title)
+			end
+			if value.Content ~= nil then
+				content.Text = tostring(value.Content)
+			end
+		end
+	end
+
+	return container, nil
+end
+
+local Builders = {
+	Toggle = Components.Toggle,
+	Slider = Components.Slider,
+	Dropdown = Components.Dropdown,
+	Input = Components.Input,
+	Button = Components.Button,
+	Section = Components.Section,
+	Paragraph = Components.Paragraph,
+}
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 7. CONTROL PROXY — the value/flag object every component above wires into.
+--    Lives before section 8 because the compat layer below constructs these.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local ControlProxy = {}
+ControlProxy.__index = ControlProxy
+
+local function newControlProxy(ctype, cfg)
+	cfg = cfg or {}
+	local self = setmetatable({}, ControlProxy)
+	self.Type = ctype
+	self.Name = cfg.Name
+	self.Flag = cfg.Flag
+	self.Callback = cfg.Callback or function() end
+	self._visual = nil
+	self._refresh = nil
+	self._onChanged = nil
+
+	if ctype == "Dropdown" then
+		self.Options = cfg.Options or {}
+		self.CurrentOption = cfg.CurrentOption or {}
+		self.MultipleOptions = cfg.MultipleOptions and true or false
+	elseif ctype == "Slider" then
+		self.CurrentValue = cfg.CurrentValue or 0
+		self.Range = cfg.Range or { 0, 100 }
+		self.Increment = cfg.Increment or 1
+		self.Suffix = cfg.Suffix or ""
+	elseif ctype == "Input" then
+		self.CurrentValue = cfg.CurrentValue or ""
+		self.PlaceholderText = cfg.PlaceholderText or ""
+		self.RemoveTextAfterFocusLost = cfg.RemoveTextAfterFocusLost
+	elseif ctype == "Toggle" then
+		self.CurrentValue = cfg.CurrentValue and true or false
+	elseif ctype == "Paragraph" then
+		self.Title = cfg.Title
+		self.Content = cfg.Content
+	end
+	-- Section / Button only need Name (+ Callback for Button)
+
+	return self
+end
+
+function ControlProxy:_fire(value)
+	if self.Type == "Dropdown" then
+		self.CurrentOption = value
+	else
+		self.CurrentValue = value
+	end
+	local ok, err = pcall(self.Callback, value)
+	if not ok then
+		warn(("[Losarinz] '%s' callback error: %s"):format(tostring(self.Name), tostring(err)))
+	end
+	if self._onChanged then
+		self._onChanged()
+	end
+end
+
+function ControlProxy:Set(value, silent)
+	if self.Type == "Dropdown" then
+		self.CurrentOption = value
+	elseif self.Type == "Paragraph" then
+		if typeof(value) == "table" then
+			if value.Title ~= nil then
+				self.Title = value.Title
+			end
+			if value.Content ~= nil then
+				self.Content = value.Content
+			end
+		end
+	elseif self.Type == "Button" then
+		if typeof(value) == "string" then
+			self.Name = value
+		end
+	else
+		self.CurrentValue = value
+	end
+
+	if self._visual then
+		self._visual(value)
+	end
+
+	if not silent and self.Type ~= "Paragraph" and self.Type ~= "Section" then
+		local target = if self.Type == "Dropdown" then self.CurrentOption else self.CurrentValue
+		local ok, err = pcall(self.Callback, target)
+		if not ok then
+			warn(("[Losarinz] '%s' callback error: %s"):format(tostring(self.Name), tostring(err)))
+		end
+		if self._onChanged then
+			self._onChanged()
+		end
+	end
+end
+
+function ControlProxy:Refresh(options)
+	self.Options = options or {}
+	if self._refresh then
+		self._refresh(self.Options)
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 8. RAYFIELD-COMPATIBLE SHIM — lets an existing `rayfield:CreateWindow(...)`
+--    script run unmodified on top of Losarinz. Only the loader line needs to
+--    change (require this instead of loadstring-ing Rayfield); every
+--    CreateTab/CreateToggle/CreateSlider/.../Notify/LoadConfiguration call
+--    the script already makes keeps working as-is.
+--
+--    Why this has to buffer things: Losarinz builds each tab's page lazily,
+--    the first time it is selected, and it needs the *full* tab list up
+--    front (NavigationController.new(window, tabs)). A Rayfield-style
+--    script, though, creates tabs and controls one at a time, interleaved,
+--    and only calls rayfield:LoadConfiguration() once at the very end. So
+--    this shim just records everything the script declares (tabs, controls,
+--    their initial values) into plain queues, and only actually builds the
+--    real Losarinz window at that final LoadConfiguration() call — at which
+--    point the whole tab/control list is known. Every CreateX call returns
+--    a live ControlProxy immediately (so `local x = tab:CreateToggle(...)`
+--    and `rayfield.Flags.X:Set(...)` both work right away); the proxy just
+--    has nothing to paint on screen until the real control is built.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local TabProxy = {}
+TabProxy.__index = TabProxy
+
+local function newTabProxy(name, icon)
+	return setmetatable({ Name = name, Icon = icon, Queue = {} }, TabProxy)
+end
+
+local function queueControl(tab, ctype, cfg)
+	local proxy = newControlProxy(ctype, cfg)
+	table.insert(tab.Queue, proxy)
+	return proxy
+end
+
+function TabProxy:CreateToggle(cfg)
+	return queueControl(self, "Toggle", cfg)
+end
+function TabProxy:CreateSlider(cfg)
+	return queueControl(self, "Slider", cfg)
+end
+function TabProxy:CreateDropdown(cfg)
+	return queueControl(self, "Dropdown", cfg)
+end
+function TabProxy:CreateInput(cfg)
+	return queueControl(self, "Input", cfg)
+end
+function TabProxy:CreateButton(cfg)
+	return queueControl(self, "Button", cfg)
+end
+function TabProxy:CreateParagraph(cfg)
+	return queueControl(self, "Paragraph", cfg)
+end
+function TabProxy:CreateSection(name)
+	return queueControl(self, "Section", { Name = name })
+end
+
+local Compat = {}
+Compat.__index = Compat
+
+local function newCompat()
+	return setmetatable({
+		Flags = {},
+		_tabs = {},
+		_options = {},
+		_built = false,
+		_autosave = false,
+		_window = nil,
+		_nav = nil,
+		_toastLayer = nil,
+	}, Compat)
+end
+
+-- Rayfield scripts do `local window = rayfield:CreateWindow(opts)` and then
+-- call CreateTab on `window`, but Notify/LoadConfiguration on `rayfield`
+-- itself — returning `self` here means window and rayfield are the same
+-- object, so every one of those calls lands on the same table.
+function Compat:CreateWindow(opts)
+	self._options = opts or {}
+	if typeof(self._options.ConfigurationSaving) == "table" then
+		self._configSaving = self._options.ConfigurationSaving
+	end
+	return self
+end
+
+function Compat:CreateTab(name, icon)
+	local tab = newTabProxy(name, icon)
+	table.insert(self._tabs, tab)
+	return tab
+end
+
+function Compat:_configFile()
+	local saving = self._configSaving
+	if not (saving and saving.Enabled) then
+		return nil, nil
+	end
+	local folder = saving.FolderName or "LosarinzTrainer"
+	local file = saving.FileName or "settings"
+	return folder, (folder .. "/" .. file .. ".json")
+end
+
+function Compat:_save()
+	local folder, path = self:_configFile()
+	if not path or typeof(writefile) ~= "function" then
+		return
+	end
+	local data = {}
+	for flagName, proxy in self.Flags do
+		if proxy.Type == "Dropdown" then
+			data[flagName] = proxy.CurrentOption
+		elseif proxy.Type ~= "Section" and proxy.Type ~= "Paragraph" and proxy.Type ~= "Button" then
+			data[flagName] = proxy.CurrentValue
+		end
+	end
+	pcall(function()
+		if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder(folder) then
+			makefolder(folder)
+		end
+		writefile(path, game:GetService("HttpService"):JSONEncode(data))
+	end)
+end
+
+function Compat:_ensureToastLayer()
+	if self._toastLayer then
+		return self._toastLayer
+	end
+	local layer = Theme.instance("Frame", {
+		Name = "Toasts",
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -20, 1, -20),
+		Size = UDim2.fromOffset(300, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+	}, { Theme.list(Enum.FillDirection.Vertical, 8, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Bottom) })
+	layer.Parent = self._window._gui
+	self._toastLayer = layer
+	return layer
+end
+
+function Compat:Notify(opts)
+	opts = opts or {}
+	if not self._built then
+		warn("[Losarinz] Notify called before the window was built: " .. tostring(opts.Title))
+		return
+	end
+	local layer = self:_ensureToastLayer()
+	local card = Theme.instance("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = Theme.Colors.Card,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+	}, {
+		Theme.corner(Theme.Radius.Card),
+		Theme.stroke(Theme.Colors.Primary, 1, 1),
+		Theme.padding(14, 10, 14, 10),
+		Theme.list(Enum.FillDirection.Vertical, 2),
+	})
+	card.Parent = layer
+
+	Theme.instance("TextLabel", {
+		Text = tostring(opts.Title or "Notice"),
+		TextSize = 13,
+		Font = Theme.Fonts.Bold,
+		TextColor3 = Theme.Colors.TextPrimary,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextWrapped = true,
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.new(1, 0, 0, 0),
+		BackgroundTransparency = 1,
+	}).Parent = card
+
+	if opts.Content and opts.Content ~= "" then
+		Theme.instance("TextLabel", {
+			Text = tostring(opts.Content),
+			TextSize = 12,
+			Font = Theme.Fonts.Regular,
+			TextColor3 = Theme.Colors.TextSecondary,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextWrapped = true,
+			AutomaticSize = Enum.AutomaticSize.Y,
+			Size = UDim2.new(1, 0, 0, 0),
+			BackgroundTransparency = 1,
+		}).Parent = card
+	end
+
+	Theme.play(card, Config.Animation.Fade, { BackgroundTransparency = 0.1 })
+	for _, child in card:GetChildren() do
+		if child:IsA("UIStroke") then
+			Theme.play(child, Config.Animation.Fade, { Transparency = 0.3 })
+		end
+	end
+
+	task.delay(math.max(opts.Duration or 5, 1), function()
+		if card and card.Parent then
+			Theme.play(card, Config.Animation.Fade, { BackgroundTransparency = 1 })
+			for _, child in card:GetChildren() do
+				if child:IsA("UIStroke") then
+					Theme.play(child, Config.Animation.Fade, { Transparency = 1 })
+				end
+			end
+			task.wait(0.25)
+			card:Destroy()
+		end
+	end)
+end
+
+function Compat:_build()
+	if self._built then
+		return
+	end
+	self._built = true
+
+	local tabConfigs = {}
+	for _, tab in self._tabs do
+		table.insert(tabConfigs, {
+			Name = tab.Name,
+			Icon = tab.Icon,
+			Page = {
+				Build = function(page, _context)
+					local scroller = Theme.instance("ScrollingFrame", {
+						Size = UDim2.fromScale(1, 1),
+						BackgroundTransparency = 1,
+						BorderSizePixel = 0,
+						ScrollBarThickness = 4,
+						ScrollBarImageColor3 = Theme.Colors.Primary,
+						CanvasSize = UDim2.new(0, 0, 0, 0),
+						AutomaticCanvasSize = Enum.AutomaticSize.Y,
+					}, { Theme.padding(18, 16, 18, 16), Theme.list(Enum.FillDirection.Vertical, 10) })
+					scroller.Parent = page
+
+					local cleanups = {}
+					for i, proxy in tab.Queue do
+						local builder = Builders[proxy.Type]
+						if builder then
+							local _container, cleanup = builder(scroller, i, proxy)
+							if cleanup then
+								table.insert(cleanups, cleanup)
+							end
+							if proxy.Flag then
+								self.Flags[proxy.Flag] = proxy
+							end
+							proxy._onChanged = function()
+								if self._autosave then
+									self:_save()
+								end
+							end
+						end
+					end
+
+					return function()
+						for _, c in cleanups do
+							pcall(c)
+						end
+					end
+				end,
+			},
+		})
+	end
+
+	self._window = WindowController.new({ Size = Config.Window.DefaultSize })
+	self._nav = NavigationController.new(self._window, tabConfigs)
+	self._window:Show()
+
+	-- Force every tab to build right away: automation toggles on tabs the
+	-- person never opens still need to exist and hold their Flag values.
+	for _, tab in tabConfigs do
+		self._nav:SelectTab(tab.Name)
+	end
+	if tabConfigs[1] then
+		self._nav:SelectTab(tabConfigs[1].Name)
+	end
+
+	self._window:RegisterActivity("Loaded " .. tostring(self._options.Name or Config.Brand.WindowTitle))
+end
+
+function Compat:LoadConfiguration()
+	self:_build()
+
+	local _, path = self:_configFile()
+	local saved
+	if path and typeof(isfile) == "function" and typeof(readfile) == "function" and isfile(path) then
+		local ok, result = pcall(function()
+			return game:GetService("HttpService"):JSONDecode(readfile(path))
+		end)
+		if ok then
+			saved = result
+		end
+	end
+
+	if saved then
+		for flagName, proxy in self.Flags do
+			local value = saved[flagName]
+			if value ~= nil then
+				proxy:Set(value, false)
+			end
+		end
+	end
+
+	-- Only autosave from here on — the restore above already wrote every
+	-- flag's starting value, no need to re-save the file for that.
+	self._autosave = true
+end
+
+function Compat:SaveConfiguration()
+	self:_save()
+end
+
+function Compat:Destroy()
+	if self._nav then
+		self._nav:Destroy()
+	end
+	if self._window then
+		self._window:Destroy()
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 9. PUBLIC API — the Losarinz namespace
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Losarinz = {}
@@ -1566,6 +2483,26 @@ function Losarinz.CreateWindow(options)
 		Config = Config,
 		Theme = Theme,
 	}
+end
+
+--[[
+	Losarinz.CreateRayfieldCompat() -> rayfield-shaped table
+
+	Drop-in replacement for `loadstring(game:HttpGet(RAYFIELD_URL))()`. The
+	object it returns supports :CreateWindow(opts) / :CreateTab(name, icon) /
+	:CreateToggle / :CreateSlider / :CreateDropdown / :CreateInput /
+	:CreateButton / :CreateSection / :CreateParagraph / :Notify(opts) /
+	:LoadConfiguration() / :SaveConfiguration() / :Destroy(), and a .Flags
+	table keyed by each control's Flag — the same shape an existing
+	Rayfield script already expects, so only its loader line changes:
+
+		local rayfield = Losarinz.CreateRayfieldCompat()
+		local window = rayfield:CreateWindow({ ConfigurationSaving = {...} })
+		-- every CreateTab / CreateToggle / ... / Notify / LoadConfiguration
+		-- call below this line is unchanged from the Rayfield version.
+]]
+function Losarinz.CreateRayfieldCompat()
+	return newCompat()
 end
 
 return Losarinz
