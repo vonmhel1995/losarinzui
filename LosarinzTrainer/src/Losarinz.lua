@@ -375,7 +375,7 @@ function WindowController.new(config)
 		BackgroundColor3 = Theme.Colors.MainPanel,
 		BorderSizePixel = 0,
 		LayoutOrder = 3,
-	}, { Theme.instance("UIFlexItem", { FlexMode = Enum.FlexMode.Fill }) })
+	}, { Theme.instance("UIFlexItem", { FlexMode = Enum.UIFlexMode.Fill }) })
 	mainPanel.Parent = body
 	self.MainPanel = mainPanel
 
@@ -902,7 +902,7 @@ function Nav:_buildSidebar()
 		Size = UDim2.new(1, 0, 0, 0),
 		BackgroundTransparency = 1,
 		LayoutOrder = 3,
-	}, { Theme.instance("UIFlexItem", { FlexMode = Enum.FlexMode.Fill }) }).Parent = sidebar
+	}, { Theme.instance("UIFlexItem", { FlexMode = Enum.UIFlexMode.Fill }) }).Parent = sidebar
 
 	-- Footer: credit + online status
 	local footer = Theme.instance("Frame", {
@@ -1381,7 +1381,7 @@ function DashboardPage.Build(page, context)
 			Font = Theme.Fonts.Medium,
 			TextColor3 = Theme.Colors.TextPrimary,
 			BorderSizePixel = 0,
-		}, { Theme.corner(Theme.Radius.Control), Theme.instance("UIFlexItem", { FlexMode = Enum.FlexMode.Fill }) })
+		}, { Theme.corner(Theme.Radius.Control), Theme.instance("UIFlexItem", { FlexMode = Enum.UIFlexMode.Fill }) })
 		button.Parent = buttonRow
 		button.MouseEnter:Connect(function()
 			Theme.play(button, Config.Animation.Hover, { BackgroundTransparency = 0.1, BackgroundColor3 = Theme.Colors.CardHover })
